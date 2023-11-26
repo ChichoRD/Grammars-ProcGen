@@ -1,52 +1,86 @@
-﻿using System.Collections.Generic;
+﻿using GrammarsProcGen.Graph.Edge;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace GrammarsProcGen.Graph
 {
-    internal class Graph<TNodeData, TEdgeData> : IGraph<TNodeData, TEdgeData>
+    internal class BidirectionalGraph<TVertex, TEdge> : IGraph<TVertex, TEdge, BidirectionalGraph<TVertex, TEdge>>, IReadOnlyGraph<TVertex, TEdge>, IAccessibleGraph<TVertex, TEdge>
+        where TEdge : IEdge<TVertex>
     {
-        private readonly HashSet<INode<TNodeData>> _nodes;
-        private readonly HashSet<IEdge<TNodeData, TEdgeData>> _edges;
+        private readonly Dictionary<TVertex, HashSet<TEdge>> _verticesEdgesPairs;
+        private readonly HashSet<TEdge> _edges;
 
-        public Graph(HashSet<INode<TNodeData>> nodes, HashSet<IEdge<TNodeData, TEdgeData>> edges)
+        public IReadOnlyCollection<TVertex> Vertices => _verticesEdgesPairs.Keys;
+        public IReadOnlyCollection<TEdge> Edges => _edges;
+
+        public BidirectionalGraph(IEnumerable<TVertex> vertices, IEnumerable<TEdge> edges)
         {
-            _nodes = nodes;
-            _edges = edges;
-        }
+            _verticesEdgesPairs = new Dictionary<TVertex, HashSet<TEdge>>();
+            foreach (TVertex vertex in vertices)
+                _verticesEdgesPairs[vertex] = new HashSet<TEdge>();
 
-        public Graph() : this(new HashSet<INode<TNodeData>>(), new HashSet<IEdge<TNodeData, TEdgeData>>()) { }
-
-        public IReadOnlyCollection<INode<TNodeData>> Nodes { get => _nodes; }
-        public IReadOnlyCollection<IEdge<TNodeData, TEdgeData>> Edges { get => _edges; }
-
-        public IGraph<TNodeData, TEdgeData> WithNode<TNode>(TNode node) where TNode : INode<TNodeData> =>
-            new Graph<TNodeData, TEdgeData>(new HashSet<INode<TNodeData>>(_nodes) { node }, _edges);
-
-        public IGraph<TNodeData, TEdgeData> WithEdge<TEdge>(TEdge edge) where TEdge : IEdge<TNodeData, TEdgeData> =>
-            new Graph<TNodeData, TEdgeData>(_nodes, new HashSet<IEdge<TNodeData, TEdgeData>>(_edges) { edge })
-            .WithNode(edge.From)
-            .WithNode(edge.To);
-
-        public IGraph<TNodeData, TEdgeData> WithoutNode<TNode>(TNode node) where TNode : INode<TNodeData>
-        {
-            HashSet<IEdge<TNodeData, TEdgeData>> newEdges = new HashSet<IEdge<TNodeData, TEdgeData>>(_edges);
-            HashSet<INode<TNodeData>> newNodes = new HashSet<INode<TNodeData>>(_nodes);
-
-            foreach (IEdge<TNodeData, TEdgeData> edge in _edges)
+            _edges = new HashSet<TEdge>(edges);
+            foreach (TEdge edge in _edges)
             {
-                if (edge.From.Equals(node) || edge.To.Equals(node))
-                    newEdges.Remove(edge);
+                _verticesEdgesPairs[edge.From].Add(edge);
+                _verticesEdgesPairs[edge.To].Add(edge);
             }
-
-            newNodes.Remove(node);
-            return new Graph<TNodeData, TEdgeData>(newNodes, newEdges);
         }
 
-        public IGraph<TNodeData, TEdgeData> WithoutEdge<TEdge>(TEdge edge) where TEdge : IEdge<TNodeData, TEdgeData>
+        public BidirectionalGraph(HashSet<TVertex> vertices, HashSet<TEdge> edges)
         {
-            HashSet<IEdge<TNodeData, TEdgeData>> newEdges = new HashSet<IEdge<TNodeData, TEdgeData>>(_edges);
+            _verticesEdgesPairs = new Dictionary<TVertex, HashSet<TEdge>>();
+            foreach (TVertex vertex in vertices)
+                _verticesEdgesPairs[vertex] = new HashSet<TEdge>();
 
-            newEdges.Remove(edge);
-            return new Graph<TNodeData, TEdgeData>(_nodes, newEdges);
+            _edges = edges;
+            foreach (TEdge edge in _edges)
+            {
+                _verticesEdgesPairs[edge.From].Add(edge);
+                _verticesEdgesPairs[edge.To].Add(edge);
+            }
+        }
+
+        public BidirectionalGraph(IEnumerable<TVertex> vertices) : this(vertices, Enumerable.Empty<TEdge>()) { }
+
+        public BidirectionalGraph(IEnumerable<TEdge> edges)
+        {
+            _edges = new HashSet<TEdge>(edges);
+
+            foreach (TEdge edge in _edges)
+            {
+                _verticesEdgesPairs[edge.From] = new HashSet<TEdge>(_verticesEdgesPairs[edge.From] ?? Enumerable.Empty<TEdge>()) { edge };
+                _verticesEdgesPairs[edge.To] = new HashSet<TEdge>(_verticesEdgesPairs[edge.To] ?? Enumerable.Empty<TEdge>()) { edge };
+            }
+        }
+
+        public BidirectionalGraph() : this(Enumerable.Empty<TVertex>(), Enumerable.Empty<TEdge>()) { }
+
+        public IReadOnlyCollection<TEdge> GetEdges(TVertex vertex) =>
+            _verticesEdgesPairs.TryGetValue(vertex, out HashSet<TEdge> edges) ? edges : Enumerable.Empty<TEdge>().ToList();
+
+        public BidirectionalGraph<TVertex, TEdge> WithVertex<UVertex>(UVertex vertex) where UVertex : TVertex =>
+            new BidirectionalGraph<TVertex, TEdge>(new HashSet<TVertex>(Vertices) { vertex }, Edges);
+
+        public BidirectionalGraph<TVertex, TEdge> WithoutVertex<UVertex>(UVertex vertex) where UVertex : TVertex
+        {
+            HashSet<TEdge> edges = new HashSet<TEdge>(_edges);
+            foreach (TEdge edge in GetEdges(vertex))
+                edges.Remove(edge);
+
+            HashSet<TVertex> vertices = new HashSet<TVertex>(Vertices);
+            vertices.Remove(vertex);
+            return new BidirectionalGraph<TVertex, TEdge>(vertices, edges);
+        }
+
+        public BidirectionalGraph<TVertex, TEdge> WithEdge<UEdge>(UEdge edge) where UEdge : TEdge =>
+            new BidirectionalGraph<TVertex, TEdge>(new HashSet<TVertex>(Vertices) { edge.From, edge.To }, new HashSet<TEdge>(Edges) { edge });
+
+        public BidirectionalGraph<TVertex, TEdge> WithoutEdge<UEdge>(UEdge edge) where UEdge : TEdge
+        {
+            HashSet<TEdge> edges = new HashSet<TEdge>(_edges);
+            edges.Remove(edge);
+            return new BidirectionalGraph<TVertex, TEdge>(Vertices, edges);
         }
     }
 }

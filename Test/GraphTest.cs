@@ -1,6 +1,9 @@
-﻿using System.Collections.Generic;
+﻿using GrammarsProcGen.Graph.Edge;
+using GrammarsProcGen.Graph.Vertex;
+using System;
 using System.Linq;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace GrammarsProcGen.Graph
 {
@@ -10,12 +13,22 @@ namespace GrammarsProcGen.Graph
         private Bounds _bounds;
 
         [SerializeField]
-        private int _nodeCount;
+        private int _verticesCount;
 
         [SerializeField]
         private int _connectionsCount;
 
-        private IGraph<NodeData, EdgeData> _graph;
+        private IGraph<
+            IVertex<VertexData>,
+            IDataEdge<IVertex<VertexData>, EdgeData>> _graph;
+
+        private IReadOnlyGraph<
+            IVertex<VertexData>,
+            IDataEdge<IVertex<VertexData>, EdgeData>> _readOnlyGraph;
+
+        private IAccessibleGraph<
+            IVertex<VertexData>,
+            IDataEdge<IVertex<VertexData>, EdgeData>> _accessibleGraph;
 
         private void Awake()
         {
@@ -23,16 +36,28 @@ namespace GrammarsProcGen.Graph
             DebugGraph();
         }
 
+        private T SetGraphs<T>(T graph)
+            where T : IGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>,
+                      IReadOnlyGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>,
+                      IAccessibleGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>
+        {
+            _graph = graph;
+            _readOnlyGraph = graph;
+            _accessibleGraph = graph;
+            return graph;
+        }
+
         [ContextMenu(nameof(Generate))]
         private void Generate()
         {
             if (_graph != null)
-                foreach (INode<NodeData> node in _graph.Nodes)
-                    Destroy(node.Data.GameObject);
+                foreach (var vertex in _readOnlyGraph.Vertices)
+                    Destroy(vertex.Data.GameObject);
 
-            _graph = new Graph<NodeData, EdgeData>();
+            var graph = SetGraphs(new BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>());
+
             Transform transform = this.transform;
-            for (int i = 0; i < _connectionsCount; i++)
+            for (int i = 0; i < _verticesCount; i++)
             {
                 Vector3 position = new Vector3(Random.Range(_bounds.min.x, _bounds.max.x),
                                                Random.Range(_bounds.min.y, _bounds.max.y),
@@ -42,26 +67,22 @@ namespace GrammarsProcGen.Graph
                 cubeTransform.position = position;
                 cubeTransform.SetParent(transform);
 
-                _graph = _graph.WithNode(new Node<NodeData>(new NodeData(cubeTransform.gameObject)));
+                graph = SetGraphs(graph.WithVertex(new Vertex<VertexData>(new VertexData(cubeTransform.gameObject))));
             }
 
             int connectionsMade = 0;
             while (connectionsMade < _connectionsCount)
             {
-                INode<NodeData> nodeA = _graph.Nodes.ElementAt(Random.Range(0, _graph.Nodes.Count()));
-                INode<NodeData> nodeB = _graph.Nodes.ElementAt(Random.Range(0, _graph.Nodes.Count()));
+                IVertex<VertexData> from = _readOnlyGraph.Vertices.ElementAt(Random.Range(0, _readOnlyGraph.Vertices.Count));
+                IVertex<VertexData> to = _readOnlyGraph.Vertices.ElementAt(Random.Range(0, _readOnlyGraph.Vertices.Count));
 
-                if (nodeA.Equals(nodeB))
+                if (from.Equals(to))
                     continue;
 
-                if (nodeA.Edges.Any(edge => nodeB.Edges.Contains(edge)))
-                    continue;
+                //float weight = Vector3.Distance(from.Data.GameObject.transform.position, to.Data.GameObject.transform.position);
 
-                float weight = Vector3.Distance(nodeA.Data.GameObject.transform.position,
-                                                nodeB.Data.GameObject.transform.position);
-
-                _graph = _graph.WithConnection(nodeA, nodeB, new EdgeData(weight));
-                connectionsMade++;
+                graph = SetGraphs(graph.WithEdge(new Edge<IVertex<VertexData>, EdgeData>(from, to, new EdgeData(from.Data.GameObject.transform, to.Data.GameObject.transform))));
+                ++connectionsMade;
             }
         }
 
@@ -69,13 +90,10 @@ namespace GrammarsProcGen.Graph
         private void DebugGraph()
         {
             const float DURATION = 10.0f;
-            IEnumerable<IEdge<NodeData, EdgeData>> edges = _graph.Edges.Cast<IEdge<NodeData, EdgeData>>();
-            foreach (INode<NodeData> node in _graph.Nodes)
-            {
-                DrawCross3D(node.Data.GameObject.transform.position, 0.5f, Color.blue, DURATION);
-            }
+            foreach (IVertex<VertexData> vertex in _readOnlyGraph.Vertices)
+                DrawCross3D(vertex.Data.GameObject.transform.position, 1.0f, Color.blue, DURATION);
 
-            foreach (IEdge<NodeData, EdgeData> edge in edges)
+            foreach (IDataEdge<IVertex<VertexData>, EdgeData> edge in _readOnlyGraph.Edges)
             {
                 Color closeColor = Color.green;
                 Color farColor = Color.red;
@@ -104,24 +122,49 @@ namespace GrammarsProcGen.Graph
             }
         }
 
-        private readonly struct NodeData
+        private readonly struct VertexData : IEquatable<VertexData>
         {
             public readonly GameObject GameObject { get; }
 
-            public NodeData(GameObject gameObject)
+            public VertexData(GameObject gameObject)
             {
                 GameObject = gameObject;
             }
+
+            public bool Equals(VertexData other) => GameObject.Equals(other.GameObject);
         }
 
-        private readonly struct EdgeData
+        private readonly struct EdgeData : IEquatable<EdgeData>
         {
-            public readonly float Weight { get; }
+            private readonly float _weight;
+            public readonly float Weight { get => HasFromAndTo() ? Vector3.Distance(_from.position, _to.position) : _weight; }
+
+            private readonly Transform _from;
+            private readonly Transform _to;
+
+            public EdgeData(Transform from, Transform to)
+            {
+                _weight = Vector3.Distance(from.position, to.position);
+                _from = from;
+                _to = to;
+            }
 
             public EdgeData(float weight)
             {
-                Weight = weight;
+                _weight = weight;
+                _from = null;
+                _to = null;
             }
+
+            public bool Equals(EdgeData other) => Weight.Equals(other.Weight);
+
+            private bool HasFromAndTo() => _from != null && _to != null;
+        }
+
+        private void OnDrawGizmosSelected()
+        {
+            Gizmos.color = Color.blue;
+            Gizmos.DrawWireCube(_bounds.center, _bounds.size);
         }
     }
 }

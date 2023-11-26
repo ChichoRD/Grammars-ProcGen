@@ -1,10 +1,12 @@
-﻿using System.Collections.Generic;
+﻿using GrammarsProcGen.Graph.Edge;
+using System.Collections.Generic;
 
 namespace GrammarsProcGen.Graph
 {
-    internal interface IReadOnlyGraph<TNodeData, out TEdgeData>
+    internal interface IReadOnlyGraph<out Tvertex, out TEdge>
+        where TEdge : IEdge<Tvertex>
     {
-        IReadOnlyCollection<INode<TNodeData>> Nodes { get; }
-        IReadOnlyCollection<IEdge<TNodeData, TEdgeData>> Edges { get; }
+        IReadOnlyCollection<Tvertex> Vertices { get; }
+        IReadOnlyCollection<TEdge> Edges { get; }
     }
 }
