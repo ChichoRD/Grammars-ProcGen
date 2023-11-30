@@ -18,7 +18,7 @@ namespace GrammarsProcGen.Graph
 
     internal interface IGraph<in TVertex, in TEdge, out TGraph> : IGraph<TVertex, TEdge>
         where TEdge : IEdge<TVertex>
-        where TGraph : IGraph<TVertex, TEdge, TGraph>
+        where TGraph : struct, IGraph<TVertex, TEdge, TGraph>
     {
         IGraph<TVertex, TEdge> IGraph<TVertex, TEdge>.WithVertex<UVertex>(UVertex vertex) =>
             WithVertex(vertex);

@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace GrammarsProcGen.Graph
 {
-    internal class BidirectionalGraph<TVertex, TEdge> : IGraph<TVertex, TEdge, BidirectionalGraph<TVertex, TEdge>>, IReadOnlyGraph<TVertex, TEdge>, IAccessibleGraph<TVertex, TEdge>
+    internal readonly struct BidirectionalGraph<TVertex, TEdge> : IGraph<TVertex, TEdge, BidirectionalGraph<TVertex, TEdge>>, IReadOnlyGraph<TVertex, TEdge>, IAccessibleGraph<TVertex, TEdge>
         where TEdge : IEdge<TVertex>
     {
         private readonly Dictionary<TVertex, HashSet<TEdge>> _verticesEdgesPairs;
@@ -41,10 +41,25 @@ namespace GrammarsProcGen.Graph
             }
         }
 
+        public BidirectionalGraph(IReadOnlyGraph<TVertex, TEdge> graph)
+        {
+            _verticesEdgesPairs = new Dictionary<TVertex, HashSet<TEdge>>();
+            foreach (TVertex vertex in graph.Vertices)
+                _verticesEdgesPairs[vertex] = new HashSet<TEdge>();
+
+            _edges = new HashSet<TEdge>(graph.Edges);
+            foreach (TEdge edge in _edges)
+            {
+                _verticesEdgesPairs[edge.From].Add(edge);
+                _verticesEdgesPairs[edge.To].Add(edge);
+            }
+        }
+
         public BidirectionalGraph(IEnumerable<TVertex> vertices) : this(vertices, Enumerable.Empty<TEdge>()) { }
 
         public BidirectionalGraph(IEnumerable<TEdge> edges)
         {
+            _verticesEdgesPairs = new Dictionary<TVertex, HashSet<TEdge>>();
             _edges = new HashSet<TEdge>(edges);
 
             foreach (TEdge edge in _edges)
@@ -54,7 +69,8 @@ namespace GrammarsProcGen.Graph
             }
         }
 
-        public BidirectionalGraph() : this(Enumerable.Empty<TVertex>(), Enumerable.Empty<TEdge>()) { }
+        public static BidirectionalGraph<TVertex, TEdge> FromEmpty() =>
+            new BidirectionalGraph<TVertex, TEdge>(Enumerable.Empty<TVertex>(), Enumerable.Empty<TEdge>());
 
         public IReadOnlyCollection<TEdge> GetEdges(TVertex vertex) =>
             _verticesEdgesPairs.TryGetValue(vertex, out HashSet<TEdge> edges) ? edges : Enumerable.Empty<TEdge>().ToList();

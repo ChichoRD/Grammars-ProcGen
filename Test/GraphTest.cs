@@ -18,17 +18,7 @@ namespace GrammarsProcGen.Graph
         [SerializeField]
         private int _connectionsCount;
 
-        private IGraph<
-            IVertex<VertexData>,
-            IDataEdge<IVertex<VertexData>, EdgeData>> _graph;
-
-        private IReadOnlyGraph<
-            IVertex<VertexData>,
-            IDataEdge<IVertex<VertexData>, EdgeData>> _readOnlyGraph;
-
-        private IAccessibleGraph<
-            IVertex<VertexData>,
-            IDataEdge<IVertex<VertexData>, EdgeData>> _accessibleGraph;
+        private BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>> _graph;
 
         private void Awake()
         {
@@ -36,26 +26,14 @@ namespace GrammarsProcGen.Graph
             DebugGraph();
         }
 
-        private T SetGraphs<T>(T graph)
-            where T : IGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>,
-                      IReadOnlyGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>,
-                      IAccessibleGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>
-        {
-            _graph = graph;
-            _readOnlyGraph = graph;
-            _accessibleGraph = graph;
-            return graph;
-        }
-
         [ContextMenu(nameof(Generate))]
         private void Generate()
         {
-            if (_graph != null)
-                foreach (var vertex in _readOnlyGraph.Vertices)
+            if (_graph.Edges != null)
+                foreach (var vertex in _graph.Vertices)
                     Destroy(vertex.Data.GameObject);
 
-            var graph = SetGraphs(new BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>());
-
+            _graph = BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>.FromEmpty();
             Transform transform = this.transform;
             for (int i = 0; i < _verticesCount; i++)
             {
@@ -67,33 +45,74 @@ namespace GrammarsProcGen.Graph
                 cubeTransform.position = position;
                 cubeTransform.SetParent(transform);
 
-                graph = SetGraphs(graph.WithVertex(new Vertex<VertexData>(new VertexData(cubeTransform.gameObject))));
+                _graph = _graph.WithVertex(new Vertex<VertexData>(new VertexData(cubeTransform.gameObject)));
             }
 
             int connectionsMade = 0;
             while (connectionsMade < _connectionsCount)
             {
-                IVertex<VertexData> from = _readOnlyGraph.Vertices.ElementAt(Random.Range(0, _readOnlyGraph.Vertices.Count));
-                IVertex<VertexData> to = _readOnlyGraph.Vertices.ElementAt(Random.Range(0, _readOnlyGraph.Vertices.Count));
+                IVertex<VertexData> from = _graph.Vertices.ElementAt(Random.Range(0, _graph.Vertices.Count));
+                IVertex<VertexData> to = _graph.Vertices.ElementAt(Random.Range(0, _graph.Vertices.Count));
 
-                if (from.Equals(to))
+                if (from.Equals(to)
+                    || _graph.HasConnections(from, to, out _))
                     continue;
 
                 //float weight = Vector3.Distance(from.Data.GameObject.transform.position, to.Data.GameObject.transform.position);
 
-                graph = SetGraphs(graph.WithEdge(new Edge<IVertex<VertexData>, EdgeData>(from, to, new EdgeData(from.Data.GameObject.transform, to.Data.GameObject.transform))));
+                _graph = _graph.WithEdge(new DataEdge<IVertex<VertexData>, EdgeData>(from, to, new EdgeData(from.Data.GameObject.transform, to.Data.GameObject.transform)));
                 ++connectionsMade;
             }
+        }
+
+        [ContextMenu(nameof(MutateGraph))]
+        private void MutateGraph()
+        {
+            IVertex<VertexData> ruleVertex = _graph.Vertices.ElementAt(Random.Range(0, _graph.Vertices.Count));
+            BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>> ruleGraph =
+                BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>.FromEmpty()
+                .WithVertex(ruleVertex);
+
+            Vector3 displacement = Vector3.forward * 10.0f;
+            GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            cube.transform.position = ruleVertex.Data.GameObject.transform.position + displacement;
+            cube.SetActive(false);
+
+            IVertex<VertexData> additionVertex = new Vertex<VertexData>(new VertexData(cube));
+            IDataEdge<IVertex<VertexData>, EdgeData> additionEdge = new DataEdge<IVertex<VertexData>, EdgeData>(
+                ruleVertex,
+                additionVertex,
+                new EdgeData(ruleVertex.Data.GameObject.transform, additionVertex.Data.GameObject.transform));
+            BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>> additionGraph =
+                BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>.FromEmpty()
+                .WithVertex(ruleVertex)
+                .WithVertex(additionVertex)
+                .WithEdge(additionEdge);
+
+            _graph = _graph.ReplaceSubgraphWith(
+                ruleGraph.WithEdge(new DataEdge<IVertex<VertexData>, EdgeData>(ruleVertex, additionVertex, new EdgeData(ruleVertex.Data.GameObject.transform, cube.transform))),
+                additionGraph,
+                out bool success);
+
+            if (success)
+            {
+                cube.SetActive(true);
+                DebugGraph();
+                return;
+            }
+
+            _graph = _graph.WithoutVertex(additionVertex);
+            Destroy(additionVertex.Data.GameObject);
         }
 
         [ContextMenu(nameof(DebugGraph))]
         private void DebugGraph()
         {
             const float DURATION = 10.0f;
-            foreach (IVertex<VertexData> vertex in _readOnlyGraph.Vertices)
+            foreach (IVertex<VertexData> vertex in _graph.Vertices)
                 DrawCross3D(vertex.Data.GameObject.transform.position, 1.0f, Color.blue, DURATION);
 
-            foreach (IDataEdge<IVertex<VertexData>, EdgeData> edge in _readOnlyGraph.Edges)
+            foreach (IDataEdge<IVertex<VertexData>, EdgeData> edge in _graph.Edges)
             {
                 Color closeColor = Color.green;
                 Color farColor = Color.red;

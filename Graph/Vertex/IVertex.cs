@@ -2,7 +2,7 @@
 
 namespace GrammarsProcGen.Graph.Vertex
 {
-    internal interface IVertex<TData> : IEquatable<IVertex<TData>>
+    internal interface IVertex<out TData>
     {
         TData Data { get; }
     }

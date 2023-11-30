@@ -1,4 +1,6 @@
-﻿namespace GrammarsProcGen.Graph.Edge
+﻿using System;
+
+namespace GrammarsProcGen.Graph.Edge
 {
     internal interface IEdge<out TVertex>
     {
