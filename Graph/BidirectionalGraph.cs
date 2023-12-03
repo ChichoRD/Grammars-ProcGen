@@ -4,7 +4,10 @@ using System.Linq;
 
 namespace GrammarsProcGen.Graph
 {
-    internal readonly struct BidirectionalGraph<TVertex, TEdge> : IGraph<TVertex, TEdge, BidirectionalGraph<TVertex, TEdge>>, IReadOnlyGraph<TVertex, TEdge>, IAccessibleGraph<TVertex, TEdge>
+    internal readonly struct BidirectionalGraph<TVertex, TEdge> : IGraph<TVertex, TEdge, BidirectionalGraph<TVertex, TEdge>>,
+        IReadOnlyGraph<TVertex, TEdge>,
+        IAccessibleGraph<TVertex, TEdge>,
+        IRelatableGraph<TVertex, TEdge, IReadOnlyGraph<TVertex, TEdge>>
         where TEdge : IEdge<TVertex>
     {
         private readonly Dictionary<TVertex, HashSet<TEdge>> _verticesEdgesPairs;
@@ -41,19 +44,7 @@ namespace GrammarsProcGen.Graph
             }
         }
 
-        public BidirectionalGraph(IReadOnlyGraph<TVertex, TEdge> graph)
-        {
-            _verticesEdgesPairs = new Dictionary<TVertex, HashSet<TEdge>>();
-            foreach (TVertex vertex in graph.Vertices)
-                _verticesEdgesPairs[vertex] = new HashSet<TEdge>();
-
-            _edges = new HashSet<TEdge>(graph.Edges);
-            foreach (TEdge edge in _edges)
-            {
-                _verticesEdgesPairs[edge.From].Add(edge);
-                _verticesEdgesPairs[edge.To].Add(edge);
-            }
-        }
+        public BidirectionalGraph(IReadOnlyGraph<TVertex, TEdge> graph) : this (graph.Vertices, graph.Edges) { }
 
         public BidirectionalGraph(IEnumerable<TVertex> vertices) : this(vertices, Enumerable.Empty<TEdge>()) { }
 
@@ -98,5 +89,17 @@ namespace GrammarsProcGen.Graph
             edges.Remove(edge);
             return new BidirectionalGraph<TVertex, TEdge>(Vertices, edges);
         }
+
+        public bool IsGraphOf(IReadOnlyGraph<TVertex, TEdge> other, IEqualityComparer<TVertex> vertexEqualityComparer, IEqualityComparer<TEdge> edgeEqualityComparer) =>
+            IsSubgraphOf(other, vertexEqualityComparer, edgeEqualityComparer)
+            && IsSupergraphOf(other, vertexEqualityComparer, edgeEqualityComparer);
+
+        public bool IsSubgraphOf(IReadOnlyGraph<TVertex, TEdge> superGraph, IEqualityComparer<TVertex> vertexEqualityComparer, IEqualityComparer<TEdge> edgeEqualityComparer) =>
+            !Vertices.Except(superGraph.Vertices, vertexEqualityComparer).Any()
+            && !Edges.Except(superGraph.Edges, edgeEqualityComparer).Any();
+
+        public bool IsSupergraphOf(IReadOnlyGraph<TVertex, TEdge> subGraph, IEqualityComparer<TVertex> vertexEqualityComparer, IEqualityComparer<TEdge> edgeEqualityComparer) =>
+            !subGraph.Vertices.Except(Vertices, vertexEqualityComparer).Any()
+            && !subGraph.Edges.Except(Edges, edgeEqualityComparer).Any();
     }
 }

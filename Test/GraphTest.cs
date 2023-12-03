@@ -1,6 +1,7 @@
 ﻿using GrammarsProcGen.Graph.Edge;
 using GrammarsProcGen.Graph.Vertex;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Random = UnityEngine.Random;
@@ -41,11 +42,13 @@ namespace GrammarsProcGen.Graph
                                                Random.Range(_bounds.min.y, _bounds.max.y),
                                                Random.Range(_bounds.min.z, _bounds.max.z));
 
-                Transform cubeTransform = GameObject.CreatePrimitive(PrimitiveType.Cube).transform;
-                cubeTransform.position = position;
-                cubeTransform.SetParent(transform);
+                int primitiveTypeIndex = Random.Range(0, Enum.GetValues(typeof(PrimitiveType)).Length);
+                PrimitiveType primitiveType = (PrimitiveType)primitiveTypeIndex;
+                Transform primitiveTransform = GameObject.CreatePrimitive(primitiveType).transform;
+                primitiveTransform.position = position;
+                primitiveTransform.SetParent(transform);
 
-                _graph = _graph.WithVertex(new Vertex<VertexData>(new VertexData(cubeTransform.gameObject)));
+                _graph = _graph.WithVertex(new Vertex<VertexData>(new VertexData(primitiveTransform.gameObject, primitiveType)));
             }
 
             int connectionsMade = 0;
@@ -68,35 +71,40 @@ namespace GrammarsProcGen.Graph
         [ContextMenu(nameof(MutateGraph))]
         private void MutateGraph()
         {
-            IVertex<VertexData> ruleVertex = _graph.Vertices.ElementAt(Random.Range(0, _graph.Vertices.Count));
+            IVertex<VertexData> ruleVertex0 = new Vertex<VertexData>(new VertexData(null, PrimitiveType.Sphere));
             BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>> ruleGraph =
                 BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>.FromEmpty()
-                .WithVertex(ruleVertex);
+                .WithVertex(ruleVertex0);
 
             Vector3 displacement = Vector3.forward * 10.0f;
-            GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            cube.transform.position = ruleVertex.Data.GameObject.transform.position + displacement;
-            cube.SetActive(false);
+            GameObject primitiveCubeGameObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            primitiveCubeGameObject.transform.position = displacement;
+            primitiveCubeGameObject.SetActive(false);
 
-            IVertex<VertexData> additionVertex = new Vertex<VertexData>(new VertexData(cube));
+            IVertex<VertexData> additionVertex = new Vertex<VertexData>(new VertexData(primitiveCubeGameObject, PrimitiveType.Cube));
             IDataEdge<IVertex<VertexData>, EdgeData> additionEdge = new DataEdge<IVertex<VertexData>, EdgeData>(
-                ruleVertex,
+                ruleVertex0,
                 additionVertex,
-                new EdgeData(ruleVertex.Data.GameObject.transform, additionVertex.Data.GameObject.transform));
+                new EdgeData(0.0f));
             BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>> additionGraph =
                 BidirectionalGraph<IVertex<VertexData>, IDataEdge<IVertex<VertexData>, EdgeData>>.FromEmpty()
-                .WithVertex(ruleVertex)
+                .WithVertex(ruleVertex0)
                 .WithVertex(additionVertex)
                 .WithEdge(additionEdge);
 
+            IEqualityComparer<IVertex<VertexData>> vertexEqualityComparer = new VertexPrimitiveTypeEqualityComparer();
+            IEqualityComparer<IDataEdge<IVertex<VertexData>, EdgeData>> edgeEqualityComparer = new EdgeEqualityComparer(vertexEqualityComparer);
+
             _graph = _graph.ReplaceSubgraphWith(
-                ruleGraph.WithEdge(new DataEdge<IVertex<VertexData>, EdgeData>(ruleVertex, additionVertex, new EdgeData(ruleVertex.Data.GameObject.transform, cube.transform))),
+                ruleGraph,
                 additionGraph,
+                vertexEqualityComparer,
+                edgeEqualityComparer,
                 out bool success);
 
             if (success)
             {
-                cube.SetActive(true);
+                primitiveCubeGameObject.SetActive(true);
                 DebugGraph();
                 return;
             }
@@ -110,10 +118,15 @@ namespace GrammarsProcGen.Graph
         {
             const float DURATION = 10.0f;
             foreach (IVertex<VertexData> vertex in _graph.Vertices)
-                DrawCross3D(vertex.Data.GameObject.transform.position, 1.0f, Color.blue, DURATION);
+                if (vertex.Data.GameObject != null)
+                    DrawCross3D(vertex.Data.GameObject.transform.position, 1.0f, Color.blue, DURATION);
 
             foreach (IDataEdge<IVertex<VertexData>, EdgeData> edge in _graph.Edges)
             {
+                if (edge.From.Data.GameObject == null
+                    || edge.To.Data.GameObject == null)
+                    continue;
+
                 Color closeColor = Color.green;
                 Color farColor = Color.red;
                 float maxWeight = _bounds.size.magnitude;
@@ -141,13 +154,48 @@ namespace GrammarsProcGen.Graph
             }
         }
 
+        private class EdgeEqualityComparer : EqualityComparer<IDataEdge<IVertex<VertexData>, EdgeData>>
+        {
+            private IEqualityComparer<IVertex<VertexData>> _vertexEqualityComparer;
+            public EdgeEqualityComparer(IEqualityComparer<IVertex<VertexData>> vertexEqualityComparer)
+            {
+                _vertexEqualityComparer = vertexEqualityComparer;
+            }
+
+            public override bool Equals(IDataEdge<IVertex<VertexData>, EdgeData> x, IDataEdge<IVertex<VertexData>, EdgeData> y) =>
+                _vertexEqualityComparer.Equals(x.From, y.From)
+                && _vertexEqualityComparer.Equals(x.To, y.To);
+
+            public override int GetHashCode(IDataEdge<IVertex<VertexData>, EdgeData> obj) =>
+                HashCode.Combine(_vertexEqualityComparer.GetHashCode(obj.From), _vertexEqualityComparer.GetHashCode(obj.To));
+        }
+
+        private class VertexPrimitiveTypeEqualityComparer : EqualityComparer<IVertex<VertexData>>
+        {
+            public override bool Equals(IVertex<VertexData> x, IVertex<VertexData> y) =>
+                x.Data.PrimitiveType.Equals(y.Data.PrimitiveType);
+
+            public override int GetHashCode(IVertex<VertexData> obj) => obj.Data.PrimitiveType.GetHashCode();
+        }
+
+        private class VertexReferenceEqualityComparer : EqualityComparer<IVertex<VertexData>>
+        {
+            public override bool Equals(IVertex<VertexData> x, IVertex<VertexData> y) =>
+                x.Data.GameObject.Equals(y.Data.GameObject)
+                && x.Data.PrimitiveType.Equals(y.Data.PrimitiveType);
+
+            public override int GetHashCode(IVertex<VertexData> obj) =>
+                HashCode.Combine(obj.Data.GameObject, obj.Data.PrimitiveType);
+        }
+
         private readonly struct VertexData : IEquatable<VertexData>
         {
             public readonly GameObject GameObject { get; }
-
-            public VertexData(GameObject gameObject)
+            public readonly PrimitiveType PrimitiveType { get; }
+            public VertexData(GameObject gameObject, PrimitiveType primitiveType)
             {
                 GameObject = gameObject;
+                PrimitiveType = primitiveType;
             }
 
             public bool Equals(VertexData other) => GameObject.Equals(other.GameObject);

@@ -47,6 +47,31 @@ namespace GrammarsProcGen.Graph
             return newGraph;
         }
 
+        public static bool IsGraphOf<TVertex, TEdge, TGraph>(this IRelatableGraph<TVertex, TEdge, TGraph> graph, TGraph other)
+            where TEdge : IEdge<TVertex>
+            where TGraph : IReadOnlyGraph<TVertex, TEdge> =>
+            graph.IsGraphOf(other, EqualityComparer<TVertex>.Default, EqualityComparer<TEdge>.Default);
+
+        public static bool IsSubgraphOf<TVertex, TEdge, TGraph>(this IRelatableGraph<TVertex, TEdge, TGraph> graph, TGraph superGraph)
+            where TEdge : IEdge<TVertex>
+            where TGraph : IReadOnlyGraph<TVertex, TEdge> =>
+            graph.IsSubgraphOf(superGraph, EqualityComparer<TVertex>.Default, EqualityComparer<TEdge>.Default);
+
+        public static bool IsSupergraphOf<TVertex, TEdge, TGraph>(this IRelatableGraph<TVertex, TEdge, TGraph> graph, TGraph subGraph)
+            where TEdge : IEdge<TVertex>
+            where TGraph : IReadOnlyGraph<TVertex, TEdge> =>
+            graph.IsSupergraphOf(subGraph, EqualityComparer<TVertex>.Default, EqualityComparer<TEdge>.Default);
+
+        public static bool IsProperSubgraphOf<TVertex, TEdge, TGraph>(this IRelatableGraph<TVertex, TEdge, TGraph> graph, TGraph superGraph)
+            where TEdge : IEdge<TVertex>
+            where TGraph : IReadOnlyGraph<TVertex, TEdge> =>
+            graph.IsProperSubgraphOf(superGraph, EqualityComparer<TEdge>.Default, EqualityComparer<TVertex>.Default);
+
+        public static bool IsProperSupergraphOf<TVertex, TEdge, TGraph>(this IRelatableGraph<TVertex, TEdge, TGraph> graph, TGraph subGraph)
+            where TEdge : IEdge<TVertex>
+            where TGraph : IReadOnlyGraph<TVertex, TEdge> =>
+            graph.IsProperSupergraphOf(subGraph, EqualityComparer<TEdge>.Default, EqualityComparer<TVertex>.Default);
+
         public static IEnumerable<TEdge> GetEdges<TVertex, TEdge>(this IAccessibleGraph<TVertex, TEdge> graph, TVertex from, TVertex to)
             where TEdge : IEdge<TVertex> =>
             graph.GetEdges(from).Intersect(graph.GetEdges(to));
@@ -54,28 +79,6 @@ namespace GrammarsProcGen.Graph
         public static bool HasConnections<TVertex, TEdge>(this IAccessibleGraph<TVertex, TEdge> graph, TVertex from, TVertex to, out IEnumerable<TEdge> connections)
             where TEdge : IEdge<TVertex> =>
             (connections = graph.GetEdges(from, to)).Any();
-
-        public static bool IsGraph<TVertex, TEdge>(this IReadOnlyGraph<TVertex, TEdge> graph, IReadOnlyGraph<TVertex, TEdge> other)
-            where TEdge : IEdge<TVertex> =>
-            !graph.Vertices.Except(other.Vertices).Any()
-            && !graph.Edges.Except(other.Edges).Any();
-
-        public static bool IsSubgraphOf<TVertex, TEdge>(this IReadOnlyGraph<TVertex, TEdge> graph, IReadOnlyGraph<TVertex, TEdge> superGraph)
-            where TEdge : IEdge<TVertex> =>
-            !graph.Vertices.Except(superGraph.Vertices).Any()
-            && !graph.Edges.Except(superGraph.Edges).Any();
-
-        public static bool IsSupergraphOf<TVertex, TEdge>(this IReadOnlyGraph<TVertex, TEdge> graph, IReadOnlyGraph<TVertex, TEdge> subGraph)
-            where TEdge : IEdge<TVertex> =>
-            subGraph.IsSubgraphOf(graph);
-
-        public static bool IsProperSubgraphOf<TVertex, TEdge>(this IReadOnlyGraph<TVertex, TEdge> graph, IReadOnlyGraph<TVertex, TEdge> superGraph)
-            where TEdge : IEdge<TVertex> =>
-            graph.IsSubgraphOf(superGraph) && !graph.IsGraph(superGraph);
-
-        public static bool IsProperSupergraphOf<TVertex, TEdge>(this IReadOnlyGraph<TVertex, TEdge> graph, IReadOnlyGraph<TVertex, TEdge> subGraph)
-            where TEdge : IEdge<TVertex> =>
-            graph.IsSupergraphOf(subGraph) && !graph.IsGraph(subGraph);
 
         public static IEnumerable<TVertex> GetIsolatedVertices<TVertex, TEdge, TGraph>(this TGraph graph)
             where TEdge : IEdge<TVertex>
@@ -102,14 +105,19 @@ namespace GrammarsProcGen.Graph
             return graph.WithoutVertices<TVertex, TEdge, TGraph>(isolatedVertices);
         }
 
-        public static TGraph ReplaceSubgraphWith<TVertex, TEdge, TGraph>(this TGraph graph, IReadOnlyGraph<TVertex, TEdge> subGraph, IReadOnlyGraph<TVertex, TEdge> replacement, out bool success)
+        public static TGraph ReplaceSubgraphWith<TVertex, TEdge, TGraph>(this TGraph graph, IReadOnlyGraph<TVertex, TEdge> subGraph, IReadOnlyGraph<TVertex, TEdge> replacement, IEqualityComparer<TVertex> vertexEqualityComparer, IEqualityComparer<TEdge> edgeEqualityComparer, out bool success)
             where TEdge : IEdge<TVertex>
-            where TGraph : struct, IReadOnlyGraph<TVertex, TEdge>, IAccessibleGraph<TVertex, TEdge>, IGraph<TVertex, TEdge, TGraph> =>
-            (success = graph.IsSupergraphOf(subGraph))
+            where TGraph : struct, IReadOnlyGraph<TVertex, TEdge>, IAccessibleGraph<TVertex, TEdge>, IGraph<TVertex, TEdge, TGraph>, IRelatableGraph<TVertex, TEdge, IReadOnlyGraph<TVertex, TEdge>> =>
+            (success = graph.IsSupergraphOf(subGraph, vertexEqualityComparer, edgeEqualityComparer))
             ? graph.WithoutIsolatedVertices<TVertex, TEdge, TGraph>()
                  .WithoutEdges<TVertex, TEdge, TGraph>(subGraph.Edges)
                  .WithVertices<TVertex, TEdge, TGraph>(replacement.Vertices)
                  .WithEdges<TVertex, TEdge, TGraph>(replacement.Edges)
             : graph;
+
+        public static TGraph ReplaceSubgraphWith<TVertex, TEdge, TGraph>(this TGraph graph, IReadOnlyGraph<TVertex, TEdge> subGraph, IReadOnlyGraph<TVertex, TEdge> replacement, out bool success)
+            where TEdge : IEdge<TVertex>
+            where TGraph : struct, IReadOnlyGraph<TVertex, TEdge>, IAccessibleGraph<TVertex, TEdge>, IGraph<TVertex, TEdge, TGraph>, IRelatableGraph<TVertex, TEdge, IReadOnlyGraph<TVertex, TEdge>> =>
+            graph.ReplaceSubgraphWith(subGraph, replacement, EqualityComparer<TVertex>.Default, EqualityComparer<TEdge>.Default, out success);
     }
 }
